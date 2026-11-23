@@ -17,7 +17,7 @@
 //
 //     mkdir -p out && MAKEFUN_BOT_DIR=. MAKEFUN_OUTPUT_DIR=out node main.ts
 
-import { copyFileSync, mkdirSync } from 'node:fs';
+import { copyFileSync, mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const botDir: string = process.env.MAKEFUN_BOT_DIR ?? '/bot';
@@ -25,6 +25,29 @@ const outputDir: string = process.env.MAKEFUN_OUTPUT_DIR ?? '/output';
 
 const source = join(botDir, 'POST.json');
 const target = join(outputDir, 'POST.json');
+
+// Read the post's address before handing it in: a POST.json that does not
+// parse, or whose url is not an X post's address, can only be refused by
+// the house, so fail here where the cause is visible instead of copying
+// it through silently.
+let postUrl = '';
+try {
+  const post = JSON.parse(readFileSync(source, 'utf8')) as { url?: unknown };
+  postUrl = typeof post.url === 'string' ? post.url : '';
+} catch (err) {
+  console.error(`main.ts: could not read ${source}: ${(err as Error).message}`);
+  process.exit(1);
+}
+
+// The address must be an X post's: https://x.com/<handle>/status/<id>
+// (the same on twitter.com, or an /i/web/status/<id> address, also read).
+const postAddress =
+  /^https:\/\/(www\.|mobile\.)?(x\.com|twitter\.com)\/[^/]+\/status\/\d+\/?$/.test(postUrl) ||
+  /^https:\/\/(www\.|mobile\.)?(x\.com|twitter\.com)\/i\/web\/status\/\d+\/?$/.test(postUrl);
+if (!postAddress) {
+  console.error(`main.ts: POST.json url is not an X post address: ${postUrl || '(missing)'}`);
+  process.exit(1);
+}
 
 // The output directory may not exist yet on a fresh grader run.
 mkdirSync(outputDir, { recursive: true });
